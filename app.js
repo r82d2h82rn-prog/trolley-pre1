@@ -284,17 +284,6 @@ function showScreen(name) {
   el.resultScreen.classList.toggle('is-active', name === 'result');
 }
 
-/** 先頭に巻き戻す。シーク完了を待つので再生開始が前フレームからにならない */
-function rewind(video) {
-  if (video.currentTime === 0) return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = () => { video.removeEventListener('seeked', done); resolve(); };
-    video.addEventListener('seeked', done);
-    video.currentTime = 0;
-    setTimeout(done, 400);
-  });
-}
-
 function setActiveMedia(key) {
   for (const [sceneKey, node] of Object.entries(media)) {
     node.classList.toggle('is-active', sceneKey === key);
@@ -320,7 +309,9 @@ function clearHoldTimer() {
   }
 }
 
-async function playScene(key) {
+/* iOS はタップ操作から時間が離れると再生を拒むため、await を挟まず同期で play() を呼ぶ。
+   前のシーンは離れる時点で先頭に戻してあるので、ここでシークを待つ必要がない。 */
+function playScene(key) {
   const scene = SCENES[key];
   const type = sceneType(scene);
   const node = media[key];
@@ -331,12 +322,14 @@ async function playScene(key) {
   currentScene = key;
   hideChoices();
 
-  // 音が重ならないよう、前の動画は止めてから（画は出したまま）差し替える
-  if (previousIsVideo && previous !== node) previous.pause();
+  // 音が重ならないよう前の動画は止め、次に備えて先頭に戻しておく
+  if (previousIsVideo && previous !== node) {
+    previous.pause();
+    previous.currentTime = 0;
+  }
 
   if (type === 'image') {
     setActiveMedia(key);
-    if (previousIsVideo && previous !== node) previous.currentTime = 0;
     if (scene.onEnd && scene.onEnd.result) {
       holdTimer = setTimeout(() => {
         holdTimer = null;
@@ -347,17 +340,13 @@ async function playScene(key) {
   }
 
   node.loop = Boolean(scene.choices) && !HOLD_LAST_FRAME;
-  await rewind(node);
+  if (node.currentTime !== 0) node.currentTime = 0;
 
-  try {
-    await node.play();
-  } catch (err) {
-    // 自動再生がブロックされた場合は静止画のまま次の操作を待つ
-  }
+  const started = node.play();
+  // 自動再生がブロックされた場合は静止画のまま次の操作を待つ
+  if (started && started.catch) started.catch(() => {});
 
   setActiveMedia(key);
-  if (previousIsVideo && previous !== node) previous.currentTime = 0;
-
   if (scene.choices) showChoices(scene);
 }
 
@@ -370,7 +359,7 @@ function handleEnded(event) {
   // 選択肢つきシーンは最後のフレームで静止したまま選択を待つ
 }
 
-async function choose(which) {
+function choose(which) {
   if (busy || el.choices.hidden) return;
   const scene = SCENES[currentScene];
   if (!scene || !scene.choices) return;
@@ -380,7 +369,7 @@ async function choose(which) {
 
   busy = true;
   try {
-    await playScene(choice.next);
+    playScene(choice.next);
   } finally {
     busy = false;
   }
@@ -396,12 +385,12 @@ function showResult(name) {
   el.restartButton.focus();
 }
 
-async function restart() {
+function restart() {
   if (busy) return;
   busy = true;
   try {
     showScreen('stage');
-    await playScene(FIRST_SCENE);
+    playScene(FIRST_SCENE);
   } finally {
     busy = false;
   }
@@ -411,12 +400,12 @@ async function restart() {
  * 入力
  * ============================================================ */
 
-el.startButton.addEventListener('click', async () => {
+el.startButton.addEventListener('click', () => {
   if (busy) return;
   busy = true;
   try {
     showScreen('stage');
-    await playScene(FIRST_SCENE);
+    playScene(FIRST_SCENE);
   } finally {
     busy = false;
   }
