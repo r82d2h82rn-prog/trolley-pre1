@@ -1,16 +1,16 @@
 /* ============================================================
  * trolley-pre1 — 分岐型インタラクティブ映像プレイヤー
  *
- * 【動画の置き場所】
- *   videos/ フォルダに以下の5本を置いてください（拡張子は .mp4 / .mov / .webm いずれも可）
- *     videos/IMG_pre1.mp4
+ * 【素材の置き場所】
+ *   videos/ フォルダに以下を置いてください
+ *     videos/IMG_pre1.mp4        （動画・拡張子は .mp4 / .mov / .webm 可）
  *     videos/IMG_pre2.mp4
  *     videos/IMG_pre3.mp4
- *     videos/IMG_pre4.mp4
  *     videos/IMG_bakuhatsu.mp4
+ *     videos/IMG_pre4.jpg        （静止画・.jpg / .png / .webp 可）
  *
  * 【分岐の流れ】
- *   pre1 ─A→ pre2 ─A→ pre3 ─B→ pre4 → Congratulations!
+ *   pre1 ─A→ pre2 ─A→ pre3 ─B→ pre4(静止画) → Congratulations!
  *     └B──────┴B──────┴A──→ bakuhatsu → Game Over
  * ============================================================ */
 
@@ -34,6 +34,8 @@ const SCENES = {
   },
   pre4: {
     file: 'pre4',
+    type: 'image',        // 静止画シーン
+    hold: 1600,           // 何ミリ秒見せてから Congratulations! を出すか
     onEnd: { result: 'clear' }
   }
 };
@@ -48,6 +50,11 @@ const RESULTS = {
 /* 選択肢つきのシーンで、選ばれないまま動画が終わったときの挙動
    true = 最後のフレームで静止 / false = ループ再生 */
 const HOLD_LAST_FRAME = true;
+
+const EXTENSIONS = {
+  video: ['mp4', 'MP4', 'mov', 'MOV', 'm4v', 'webm'],
+  image: ['jpg', 'JPG', 'jpeg', 'JPEG', 'png', 'PNG', 'webp']
+};
 
 /* ---- 要素参照 ---- */
 const el = {
@@ -64,29 +71,31 @@ const el = {
   restartButton: document.getElementById('restart-button')
 };
 
-const videos = {};          // シーンキー → <video>
+const media = {};           // シーンキー → <video> または <img>
 const objectUrls = [];      // 解放用
 let currentScene = null;
+let holdTimer = null;       // 静止画シーンの表示タイマー
 let busy = false;           // 遷移中の多重入力を防ぐ
 
+const sceneType = (scene) => scene.type || 'video';
+
 /* ============================================================
- * 動画ファイルの探索
+ * 素材ファイルの探索
  * ============================================================ */
 
 /** 1シーンぶんの候補パス（IMG_ 有無 × 拡張子違い）を並べる */
-function candidatePaths(base) {
+function candidatePaths(base, type) {
   const names = [`IMG_${base}`, `IMG ${base}`, base];
-  const exts = ['mp4', 'MP4', 'mov', 'MOV', 'webm'];
   const paths = [];
   for (const name of names) {
-    for (const ext of exts) paths.push(`videos/${encodeURIComponent(`${name}.${ext}`)}`);
+    for (const ext of EXTENSIONS[type]) paths.push(`videos/${encodeURIComponent(`${name}.${ext}`)}`);
   }
   return paths;
 }
 
 /** HEAD で存在するパスを1つ選ぶ。fetch 自体が使えない環境では null を返す */
-async function resolvePath(base) {
-  for (const path of candidatePaths(base)) {
+async function resolvePath(base, type) {
+  for (const path of candidatePaths(base, type)) {
     try {
       const res = await fetch(path, { method: 'HEAD' });
       if (res.ok) return path;
@@ -98,10 +107,10 @@ async function resolvePath(base) {
 }
 
 /* ============================================================
- * プリロード：再生前に全動画をダウンロードしきる
+ * プリロード：再生前に全素材をダウンロードしきる
  * ============================================================ */
 
-const loadState = {};   // シーンキー → { loaded, total }
+const loadState = {};   // シーンキー → { loaded, total, done }
 
 function updateProgress() {
   const entries = Object.values(loadState);
@@ -141,7 +150,7 @@ async function loadViaFetch(key, path) {
       loadState[key].loaded = loaded;
       updateProgress();
     }
-    blob = new Blob(chunks, { type: res.headers.get('content-type') || 'video/mp4' });
+    blob = new Blob(chunks, { type: res.headers.get('content-type') || '' });
   } else {
     blob = await res.blob();
   }
@@ -155,79 +164,91 @@ async function loadViaFetch(key, path) {
   return url;
 }
 
-/** src を張って canplaythrough を待つ（fetch が使えない file:// 用のフォールバック） */
-function loadViaElement(video, src) {
+/** src を張って読み込み完了を待つ（fetch が使えない file:// 用のフォールバック） */
+function loadViaElement(node, src, type) {
   return new Promise((resolve, reject) => {
+    const readyEvents = type === 'image' ? ['load'] : ['canplaythrough', 'loadeddata'];
     const onReady = () => { cleanup(); resolve(); };
     const onError = () => { cleanup(); reject(new Error(`読み込めませんでした: ${src}`)); };
     const cleanup = () => {
-      video.removeEventListener('canplaythrough', onReady);
-      video.removeEventListener('loadeddata', onReady);
-      video.removeEventListener('error', onError);
+      readyEvents.forEach((name) => node.removeEventListener(name, onReady));
+      node.removeEventListener('error', onError);
     };
-    video.addEventListener('canplaythrough', onReady);
-    video.addEventListener('loadeddata', onReady);   // 一部ブラウザは canplaythrough を出さない
-    video.addEventListener('error', onError);
-    video.preload = 'auto';
-    video.src = src;
-    video.load();
+    readyEvents.forEach((name) => node.addEventListener(name, onReady));
+    node.addEventListener('error', onError);
+    node.src = src;
+    if (type !== 'image') node.load();
   });
 }
 
-/** decode 完了まで待つ（張り替え直後の一瞬の黒画面を防ぐ） */
-function waitReady(video) {
-  if (video.readyState >= 3) return Promise.resolve();
+/** デコード完了まで待つ（張り替え直後の一瞬のちらつきを防ぐ） */
+function waitReady(node, type) {
+  if (type === 'image') {
+    return (node.decode ? node.decode() : Promise.resolve()).catch(() => {});
+  }
+  if (node.readyState >= 3) return Promise.resolve();
   return new Promise((resolve) => {
     const done = () => {
-      video.removeEventListener('canplaythrough', done);
-      video.removeEventListener('loadeddata', done);
+      node.removeEventListener('canplaythrough', done);
+      node.removeEventListener('loadeddata', done);
       resolve();
     };
-    video.addEventListener('canplaythrough', done);
-    video.addEventListener('loadeddata', done);
+    node.addEventListener('canplaythrough', done);
+    node.addEventListener('loadeddata', done);
     setTimeout(done, 8000);
   });
 }
 
+function createNode(key, type) {
+  const node = type === 'image' ? document.createElement('img') : document.createElement('video');
+  if (type === 'image') {
+    node.alt = '';
+    node.decoding = 'async';
+  } else {
+    node.playsInline = true;
+    node.setAttribute('playsinline', '');
+    node.setAttribute('webkit-playsinline', '');
+    node.preload = 'auto';
+  }
+  node.dataset.scene = key;
+  el.videoStage.appendChild(node);
+  media[key] = node;
+  return node;
+}
+
 async function preloadScene(key) {
   const scene = SCENES[key];
-  const video = document.createElement('video');
-  video.playsInline = true;
-  video.setAttribute('playsinline', '');
-  video.setAttribute('webkit-playsinline', '');
-  video.preload = 'auto';
-  video.dataset.scene = key;
-  el.videoStage.appendChild(video);
-  videos[key] = video;
+  const type = sceneType(scene);
+  const node = createNode(key, type);
 
   loadState[key] = { loaded: 0, total: 0, done: false };
 
-  const path = await resolvePath(scene.file);
+  const path = await resolvePath(scene.file, type);
+  const example = type === 'image' ? `videos/IMG_${scene.file}.jpg` : `videos/IMG_${scene.file}.mp4`;
 
   if (path === '') {
-    throw new Error(`${scene.file} の動画が videos/ に見つかりません（例: videos/IMG_${scene.file}.mp4）`);
+    throw new Error(`${scene.file} の素材が videos/ に見つかりません（例: ${example}）`);
   }
 
   if (path === null) {
-    // fetch が使えない環境：候補を順に <video> へ直接読ませる
-    let lastError = null;
-    for (const candidate of candidatePaths(scene.file)) {
+    // fetch が使えない環境：候補を順に要素へ直接読ませる
+    for (const candidate of candidatePaths(scene.file, type)) {
       try {
-        await loadViaElement(video, candidate);
+        await loadViaElement(node, candidate, type);
         loadState[key].done = true;
         updateProgress();
         return;
       } catch (err) {
-        lastError = err;
+        /* 次の候補へ */
       }
     }
-    throw new Error(`${scene.file} の動画を読み込めません（例: videos/IMG_${scene.file}.mp4）`);
+    throw new Error(`${scene.file} の素材を読み込めません（例: ${example}）`);
   }
 
   const url = await loadViaFetch(key, path);
-  video.src = url;
-  video.load();
-  await waitReady(video);
+  node.src = url;
+  if (type !== 'image') node.load();
+  await waitReady(node, type);
   loadState[key].done = true;
   updateProgress();
 }
@@ -240,10 +261,10 @@ async function preloadAll() {
   if (errors.length > 0) {
     el.loadError.hidden = false;
     el.loadError.textContent =
-      '以下の動画が読み込めませんでした。\n\n' +
+      '以下の素材が読み込めませんでした。\n\n' +
       errors.map((message) => `・${message}`).join('\n') +
       '\n\nvideos/ フォルダにファイルを置いて、ページを再読み込みしてください。' +
-      '\n（ファイルを開くのではなく、簡易サーバー経由で開く必要があります。README を参照）';
+      '\n（ファイルを直接開くのではなく、簡易サーバー経由で開く必要があります。README を参照）';
     el.progressLabel.textContent = '読み込み失敗';
     return;
   }
@@ -274,15 +295,14 @@ function rewind(video) {
   });
 }
 
-function setActiveVideo(key) {
-  for (const [sceneKey, video] of Object.entries(videos)) {
-    video.classList.toggle('is-active', sceneKey === key);
+function setActiveMedia(key) {
+  for (const [sceneKey, node] of Object.entries(media)) {
+    node.classList.toggle('is-active', sceneKey === key);
   }
 }
 
 function showChoices(scene) {
-  const buttons = el.choices.querySelectorAll('.choice');
-  buttons.forEach((button) => {
+  el.choices.querySelectorAll('.choice').forEach((button) => {
     const choice = scene.choices[button.dataset.choice];
     button.querySelector('.choice-label').textContent = choice.label || '';
   });
@@ -293,28 +313,50 @@ function hideChoices() {
   el.choices.hidden = true;
 }
 
+function clearHoldTimer() {
+  if (holdTimer !== null) {
+    clearTimeout(holdTimer);
+    holdTimer = null;
+  }
+}
+
 async function playScene(key) {
   const scene = SCENES[key];
-  const video = videos[key];
-  const previous = currentScene ? videos[currentScene] : null;
+  const type = sceneType(scene);
+  const node = media[key];
+  const previous = currentScene ? media[currentScene] : null;
+  const previousIsVideo = previous && previous.tagName === 'VIDEO';
 
+  clearHoldTimer();
   currentScene = key;
   hideChoices();
 
   // 音が重ならないよう、前の動画は止めてから（画は出したまま）差し替える
-  if (previous && previous !== video) previous.pause();
+  if (previousIsVideo && previous !== node) previous.pause();
 
-  video.loop = Boolean(scene.choices) && !HOLD_LAST_FRAME;
-  await rewind(video);
+  if (type === 'image') {
+    setActiveMedia(key);
+    if (previousIsVideo && previous !== node) previous.currentTime = 0;
+    if (scene.onEnd && scene.onEnd.result) {
+      holdTimer = setTimeout(() => {
+        holdTimer = null;
+        if (currentScene === key) showResult(scene.onEnd.result);
+      }, scene.hold || 1500);
+    }
+    return;
+  }
+
+  node.loop = Boolean(scene.choices) && !HOLD_LAST_FRAME;
+  await rewind(node);
 
   try {
-    await video.play();
+    await node.play();
   } catch (err) {
     // 自動再生がブロックされた場合は静止画のまま次の操作を待つ
   }
 
-  setActiveVideo(key);
-  if (previous && previous !== video) previous.currentTime = 0;
+  setActiveMedia(key);
+  if (previousIsVideo && previous !== node) previous.currentTime = 0;
 
   if (scene.choices) showChoices(scene);
 }
@@ -324,9 +366,7 @@ function handleEnded(event) {
   if (key !== currentScene) return;
 
   const scene = SCENES[key];
-  if (scene.onEnd && scene.onEnd.result) {
-    showResult(scene.onEnd.result);
-  }
+  if (scene.onEnd && scene.onEnd.result) showResult(scene.onEnd.result);
   // 選択肢つきシーンは最後のフレームで静止したまま選択を待つ
 }
 
@@ -350,6 +390,7 @@ function showResult(name) {
   const result = RESULTS[name];
   el.resultTitle.textContent = result.title;
   el.resultTitle.classList.toggle('is-gameover', result.gameover);
+  el.resultScreen.classList.toggle('is-clear', !result.gameover);
   hideChoices();
   showScreen('result');
   el.restartButton.focus();

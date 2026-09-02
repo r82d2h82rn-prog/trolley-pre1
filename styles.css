@@ -2,7 +2,8 @@
   --bg: #000;
   --fg: #fff;
   --accent: #ff3b30;
-  --panel: rgba(20, 20, 22, 0.72);
+  /* 背景が明るい／情報量の多い映像でも沈まないよう、やや濃いめ */
+  --panel: rgba(18, 18, 20, 0.82);
   --border: rgba(255, 255, 255, 0.28);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -116,7 +117,8 @@ html, body {
   inset: 0;
 }
 
-.video-stage video {
+.video-stage video,
+.video-stage img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -128,7 +130,8 @@ html, body {
   transition: opacity 0.12s linear;
 }
 
-.video-stage video.is-active {
+.video-stage video.is-active,
+.video-stage img.is-active {
   opacity: 1;
 }
 
@@ -165,6 +168,7 @@ html, body {
   background: var(--panel);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
   color: var(--fg);
   font: inherit;
   cursor: pointer;
@@ -196,6 +200,18 @@ html, body {
   background: rgba(0, 0, 0, 0.66);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+
+/* クリア時はご褒美の画がしっかり見えるよう、暗幕を薄く＆ぼかしなし */
+#result-screen.is-clear {
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0.3) 45%,
+    rgba(0, 0, 0, 0.62) 100%
+  );
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .result-title {
