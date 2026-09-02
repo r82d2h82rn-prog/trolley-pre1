@@ -1,0 +1,6 @@
+# 動画ファイルはサイズが大きいので Git には入れない
+videos/*
+!videos/.gitkeep
+
+.DS_Store
+node_modules/

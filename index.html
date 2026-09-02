@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>trolley-pre1</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- 読み込み画面：全動画をあらかじめダウンロードしてから始める -->
+  <section id="loading-screen" class="screen is-active">
+    <h1 class="loading-title">読み込み中</h1>
+    <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+    <p id="progress-label" class="progress-label">0%</p>
+    <button id="start-button" class="button button-primary" hidden>スタート</button>
+    <p id="load-error" class="load-error" hidden></p>
+  </section>
+
+  <!-- 映像ステージ：動画要素は JS が scenes 定義から生成して重ねる -->
+  <section id="stage-screen" class="screen">
+    <div id="video-stage" class="video-stage"></div>
+
+    <div id="choices" class="choices" hidden>
+      <button class="choice" data-choice="a">
+        <span class="choice-key">A</span>
+        <span class="choice-label"></span>
+      </button>
+      <button class="choice" data-choice="b">
+        <span class="choice-key">B</span>
+        <span class="choice-label"></span>
+      </button>
+    </div>
+  </section>
+
+  <!-- 結末画面：Game Over / Congratulations! を出し分ける -->
+  <section id="result-screen" class="screen">
+    <h1 id="result-title" class="result-title"></h1>
+    <button id="restart-button" class="button button-primary">最初に戻る</button>
+  </section>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

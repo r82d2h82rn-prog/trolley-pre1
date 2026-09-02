@@ -1,0 +1,223 @@
+:root {
+  --bg: #000;
+  --fg: #fff;
+  --accent: #ff3b30;
+  --panel: rgba(20, 20, 22, 0.72);
+  --border: rgba(255, 255, 255, 0.28);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; }
+
+/* display を持つ要素にも hidden 属性を効かせる */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+  overscroll-behavior: none;
+}
+
+#app {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ---- 画面切り替え ---- */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 24px;
+}
+.screen.is-active { display: flex; }
+
+/* ---- 読み込み画面 ---- */
+.loading-title {
+  margin: 0;
+  font-size: clamp(20px, 4vw, 28px);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.progress-track {
+  width: min(420px, 78vw);
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.progress-bar {
+  width: 0%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--fg);
+  transition: width 0.2s ease-out;
+}
+
+.progress-label {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  opacity: 0.65;
+}
+
+.load-error {
+  max-width: min(560px, 88vw);
+  margin: 0;
+  padding: 16px 20px;
+  border: 1px solid rgba(255, 59, 48, 0.5);
+  border-radius: 12px;
+  background: rgba(255, 59, 48, 0.1);
+  color: #ffb4ae;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  text-align: left;
+}
+
+/* ---- ボタン ---- */
+.button {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: clamp(15px, 2.4vw, 17px);
+  font-weight: 600;
+  padding: 14px 44px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
+}
+.button:hover { background: rgba(255, 255, 255, 0.12); }
+.button:active { transform: scale(0.97); }
+
+.button-primary {
+  border-color: var(--fg);
+  background: var(--fg);
+  color: #000;
+}
+.button-primary:hover { background: #e6e6e6; }
+
+/* ---- 映像ステージ ---- */
+.video-stage {
+  position: absolute;
+  inset: 0;
+}
+
+.video-stage video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--bg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s linear;
+}
+
+.video-stage video.is-active {
+  opacity: 1;
+}
+
+/* ---- 選択肢（画面下部） ---- */
+.choices {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(28px + var(--safe-bottom));
+  display: flex;
+  justify-content: center;
+  gap: clamp(12px, 3vw, 28px);
+  padding: 0 16px;
+  animation: choices-in 0.28s ease-out both;
+}
+
+@keyframes choices-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.choice {
+  flex: 1 1 0;
+  max-width: 260px;
+  min-height: 68px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 12px 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.choice:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: var(--fg);
+}
+.choice:active { transform: scale(0.97); }
+
+.choice-key {
+  font-size: clamp(22px, 5vw, 30px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+}
+
+.choice-label {
+  font-size: 12px;
+  opacity: 0.75;
+}
+.choice-label:empty { display: none; }
+
+/* ---- 結末画面：動画の最後のフレームを背景に残したまま重ねる ---- */
+#result-screen {
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.66);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.result-title {
+  margin: 0;
+  font-size: clamp(38px, 11vw, 84px);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-align: center;
+  /* 明るい／赤いラストフレームの上でも文字が沈まないように */
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.7);
+  animation: result-in 0.4s ease-out both;
+}
+
+.result-title.is-gameover { color: var(--accent); }
+
+@keyframes result-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: none; }
+}
+
+#result-screen .button { animation: result-in 0.4s ease-out 0.25s both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
